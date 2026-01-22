@@ -2,34 +2,31 @@ import random
 
 class BotJugador:
     def __init__(self, confianza_inicial=0.8):
-        # 0.0 = Desconfiado total, 1.0 = Ingenuo total
         self.confianza = confianza_inicial
         self.rondas_jugadas = 0
-        self.veces_engañado = 0
+        self.veces_enganado = 0 
 
     def decidir(self, sugerencia_npc):
         """
-        Retorna: 0 (Izquierda) o 1 (Derecha)
+        Retorna: 0 (Izq), 1 (Centro) o 2 (Der)
         """
-        dado = random.random() # Número entre 0.0 y 1.0
+        dado = random.random()
         
-        # Si el dado es menor que mi confianza, LE CREO al NPC
         if dado < self.confianza:
-            return sugerencia_npc
+            return sugerencia_npc # Cree en la sugerencia
         else:
-            # Si no le creo, elijo el camino opuesto
-            return 1 - sugerencia_npc
+            # Desconfía: Elige cualquiera MENOS la sugerida
+            opciones = [0, 1, 2]
+            if sugerencia_npc in opciones:
+                opciones.remove(sugerencia_npc)
+            return random.choice(opciones)
 
-    def recibir_resultado(self, fue_engañado):
-        """Actualiza la confianza basado en lo que pasó"""
-        if fue_engañado:
-            self.veces_engañado += 1
-            # CASTIGO: La confianza baja fuerte (ej. baja un 20%)
-            self.confianza = self.confianza * 0.8
+    def recibir_resultado(self, fue_enganado):
+        if fue_enganado:
+            self.veces_enganado += 1
+            self.confianza *= 0.8
         else:
-            # PREMIO: La confianza sube un poquito (ej. sube un 5%)
-            self.confianza = self.confianza * 1.05
+            self.confianza *= 1.05
         
-        # Mantenemos la confianza dentro de los límites lógicos (0 a 1)
         self.confianza = max(0.05, min(1.0, self.confianza))
         self.rondas_jugadas += 1
