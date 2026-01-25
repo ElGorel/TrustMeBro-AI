@@ -4,3 +4,4 @@
 # Requisitos 
 pip install pygame 
 pip install matplotlib
+pip install Pillow 
