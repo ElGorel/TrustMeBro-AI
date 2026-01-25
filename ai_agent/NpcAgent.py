@@ -4,7 +4,7 @@ import pickle
 import os
 
 class NpcAgent:
-    def __init__(self, alpha=0.1, gamma=0.95, epsilon=1.0, archivo_q='cerebro_entrenado.pkl'):
+    def __init__(self, alpha=0.01, gamma=0.95, epsilon=1.0, archivo_q='cerebro_entrenado.pkl'):
         """
         Estados (18) = 3 Niveles * 2 Confianzas * 3 Caminos
         Acciones (3) = 0: Izq, 1: Centro, 2: Der
