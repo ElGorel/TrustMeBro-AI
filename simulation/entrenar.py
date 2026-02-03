@@ -6,25 +6,26 @@ import time
 
 try:
     import matplotlib
-    matplotlib.use('Agg') # Fuerza a Matplotlib a no abrir ventanas (evita bloqueos)
+    matplotlib.use('Agg') 
     import matplotlib.pyplot as plt
     import numpy as np
     print(">>> [2] Librerías Matplotlib y NumPy cargadas.")
 except ImportError as e:
-    print(f"XXX ERROR: Faltan librerías. Ejecuta 'pip install matplotlib numpy'. Detalle: {e}")
+    print(f"XXX ERROR: Faltan librerías. Detalle: {e}")
     sys.exit()
 
 # --- CONFIGURACIÓN DE RUTAS ---
-directorio_actual = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(directorio_actual, '../ai_agent'))
-sys.path.append(os.path.join(directorio_actual, '../game_engine'))
+# Obtenemos la ruta absoluta de la carpeta 'simulation' donde vive este script
+directorio_simulacion = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(directorio_simulacion, '../ai_agent'))
+sys.path.append(os.path.join(directorio_simulacion, '../game_engine'))
 
 try:
     from NpcAgent import NpcAgent
     from simulador import BotJugador, BotRencoroso, BotIngenuo
-    print(">>> [3] Módulos locales (NpcAgent y simulador) cargados con éxito.")
+    print(">>> [3] Módulos locales cargados con éxito.")
 except ImportError as e:
-    print(f"XXX ERROR de Importación: Revisa que los nombres de archivos y carpetas coincidan. Detalle: {e}")
+    print(f"XXX ERROR de Importación: {e}")
     sys.exit()
 
 class RewardSystem:
@@ -50,7 +51,14 @@ class Entrenador:
     def __init__(self, episodios=10000):
         print(f">>> [4] Inicializando Agente IA...")
         self.episodios = episodios
-        self.agent = NpcAgent()
+        
+        # --- MEJORA: Definir ruta absoluta para el cerebro ---
+        directorio_sim = os.path.dirname(os.path.abspath(__file__))
+        self.ruta_cerebro = os.path.join(directorio_sim, "cerebro_entrenado.pkl")
+        
+        # Pasamos la ruta exacta al agente
+        self.agent = NpcAgent(archivo_q=self.ruta_cerebro)
+        
         self.historia_recompensas = []
         self.historia_exitos = []
 
@@ -103,8 +111,8 @@ class Entrenador:
         try:
             fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
             ventana = 500
+            
             if len(self.historia_recompensas) > ventana:
-                # Suavizado simple
                 rev_suave = np.convolve(self.historia_recompensas, np.ones(ventana)/ventana, mode='valid')
                 ax1.plot(rev_suave, color='blue')
                 ax1.set_title("Evolución de Recompensas")
@@ -115,8 +123,13 @@ class Entrenador:
                 ax2.set_title("Tasa de Engaño Exitosa")
             
             plt.tight_layout()
-            plt.savefig("reporte_final.png")
-            print(">>> [OK] Reporte guardado como 'reporte_final.png'")
+            
+            # --- MEJORA: Ruta absoluta para la imagen ---
+            directorio_sim = os.path.dirname(os.path.abspath(__file__))
+            ruta_reporte = os.path.join(directorio_sim, "reporte_final.png")
+            
+            plt.savefig(ruta_reporte)
+            print(f">>> [OK] Reporte guardado en: {ruta_reporte}")
         except Exception as e:
             print(f"XXX ERROR al graficar: {e}")
 
