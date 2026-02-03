@@ -2,6 +2,7 @@ import pygame
 import sys
 import os
 import numpy as np
+import subprocess # Necesario para abrir main.py como proceso aparte
 
 # --- CONFIGURACIÓN DE RUTAS ---
 DIR_ACTUAL = os.path.dirname(os.path.abspath(__file__))
@@ -23,11 +24,25 @@ COLOR_PANEL = (0, 0, 0)
 class AssetManager:
     @staticmethod
     def cargar_imagen(nombre, size=None):
-        ruta = os.path.join(RAIZ_PROYECTO, "assets", nombre)
-        if os.path.exists(ruta):
-            img = pygame.image.load(ruta)
-            if size: return pygame.transform.scale(img, size)
-            return img
+        # Busca primero en la raíz (donde se guarda el reporte usualmente)
+        ruta_root = os.path.join(RAIZ_PROYECTO, nombre)
+        # Busca en assets
+        ruta_assets = os.path.join(RAIZ_PROYECTO, "assets", nombre)
+        # Busca en simulation
+        ruta_sim = os.path.join(RAIZ_PROYECTO, "simulation", nombre)
+
+        ruta_final = None
+        if os.path.exists(ruta_root): ruta_final = ruta_root
+        elif os.path.exists(ruta_assets): ruta_final = ruta_assets
+        elif os.path.exists(ruta_sim): ruta_final = ruta_sim
+
+        if ruta_final:
+            try:
+                img = pygame.image.load(ruta_final)
+                if size: return pygame.transform.scale(img, size)
+                return img
+            except:
+                return None
         return None
 
     @staticmethod
@@ -35,37 +50,34 @@ class AssetManager:
         return os.path.join(RAIZ_PROYECTO, "simulation", "cerebro_entrenado.pkl")
 
 class AnalizadorStats:
-    """Clase SOLID para extraer métricas del cerebro sin ensuciar la UI"""
     @staticmethod
     def analizar_cerebro():
         ruta = AssetManager.ruta_cerebro()
         if not os.path.exists(ruta):
             return ["No se encontró cerebro entrenado.", "Ejecuta entrenar.py primero."]
 
-        agent = NpcAgent(archivo_q=ruta)
-        q_table = agent.q_table
-        
-        # 1. Porcentaje de Conocimiento (Celdas que no son cero)
-        celdas_totales = q_table.size
-        celdas_aprendidas = np.count_nonzero(q_table)
-        conocimiento_pct = (celdas_aprendidas / celdas_totales) * 100
-        
-        # 2. Confianza Promedio (Valor absoluto promedio de las recompensas esperadas)
-        confianza_media = np.mean(np.abs(q_table))
-        
-        # 3. Nivel de Maldad (Preferencia por valores altos en Nivel 2)
-        # Nivel 2 son los estados del 12 al 17
-        q_nivel_2 = q_table[12:18]
-        max_recompensa_esperada = np.max(q_nivel_2)
+        try:
+            agent = NpcAgent(archivo_q=ruta)
+            q_table = agent.q_table
+            
+            celdas_totales = q_table.size
+            celdas_aprendidas = np.count_nonzero(q_table)
+            conocimiento_pct = (celdas_aprendidas / celdas_totales) * 100
+            confianza_media = np.mean(np.abs(q_table))
+            
+            q_nivel_2 = q_table[12:18]
+            max_recompensa_esperada = np.max(q_nivel_2)
 
-        return [
-            f"--- ESTADO DEL AGENTE ---",
-            f"Dimensiones Q-Table: {q_table.shape}",
-            f"Tasa de Exploración Cubierta: {conocimiento_pct:.1f}%",
-            f"Confianza Media (Q-Value): {confianza_media:.2f}",
-            f"Potencial de Traición (Max Q Lvl 2): {max_recompensa_esperada:.1f}",
-            f"Estado: {'ENTRENADO' if conocimiento_pct > 10 else 'NOVATO'}"
-        ]
+            return [
+                f"--- ESTADO DEL AGENTE ---",
+                f"Dimensiones Q-Table: {q_table.shape}",
+                f"Tasa de Exploración: {conocimiento_pct:.1f}%",
+                f"Confianza Media (Q): {confianza_media:.2f}",
+                f"Potencial Traición (Max Lvl 2): {max_recompensa_esperada:.1f}",
+                f"Estado: {'ENTRENADO' if conocimiento_pct > 10 else 'NOVATO'}"
+            ]
+        except Exception as e:
+            return [f"Error al leer cerebro: {str(e)}"]
 
 class Boton:
     def __init__(self, x, y, w, h, texto, callback):
@@ -96,56 +108,92 @@ class DashboardApp:
     def __init__(self):
         pygame.init()
         self.pantalla = pygame.display.set_mode((ANCHO, ALTO))
-        pygame.display.set_caption("TrustMeBro - Dashboard & Debug")
+        pygame.display.set_caption("TrustMeBro - Dashboard Manager")
         self.reloj = pygame.time.Clock()
         
-        # Recursos
         self.fondo = AssetManager.cargar_imagen("Pantalla_principal.png", (ANCHO, ALTO))
-        self.fuente_info = pygame.font.SysFont("Consolas", 20) # Fuente tipo terminal
+        self.fuente_info = pygame.font.SysFont("Consolas", 20)
         
-        # Estado
-        self.modo_actual = "MENU" # MENU, ACCURACY
+        self.modo_actual = "MENU" # MENU, ACCURACY, RESUMEN
         self.info_accuracy = []
+        self.img_reporte = None
 
-        # Botones Menú
-        cx = ANCHO // 2
-        cy = ALTO // 2
+        cx, cy = ANCHO // 2, ALTO // 2
+        
+        # --- BOTONES ACTUALIZADOS ---
         self.botones = [
-            Boton(cx - 150, cy - 60, 300, 50, "Simular Bot", self.accion_simular),
-            Boton(cx - 150, cy + 10, 300, 50, "Accuracy (Resumen)", self.accion_accuracy),
-            Boton(cx - 150, cy + 80, 300, 50, "Tabla de Confusión", self.accion_confusion)
+            Boton(cx - 150, cy - 60, 300, 50, "Simular Bot (Demo)", self.accion_simular),
+            Boton(cx - 150, cy + 10, 300, 50, "Accuracy (Datos Q-Table)", self.accion_accuracy),
+            Boton(cx - 150, cy + 80, 300, 50, "Resumen (Gráfica)", self.accion_resumen)
         ]
         
-        # Botón Volver (solo visible en sub-pantallas)
         self.btn_volver = Boton(ANCHO - 120, ALTO - 60, 100, 40, "Volver", self.accion_volver)
 
     def accion_simular(self):
-        print("Botón 'Simular Bot' presionado. (Sin funcionalidad por ahora)")
+        """Lanza main.py como un proceso externo para no bloquear el dashboard"""
+        ruta_main = os.path.join(RAIZ_PROYECTO, "main.py")
+        if os.path.exists(ruta_main):
+            print("Lanzando simulación...")
+            try:
+                # sys.executable asegura que usemos el mismo python que corre esto
+                subprocess.Popen([sys.executable, ruta_main])
+            except Exception as e:
+                print(f"Error al lanzar simulación: {e}")
+        else:
+            print("No se encontró main.py")
 
     def accion_accuracy(self):
-        # Calculamos los datos EN TIEMPO REAL usando el cerebro actual
         self.info_accuracy = AnalizadorStats.analizar_cerebro()
         self.modo_actual = "ACCURACY"
 
-    def accion_confusion(self):
-        print("Botón 'Tabla de Confusión' presionado. (Sin funcionalidad por ahora)")
+    def accion_resumen(self):
+        # Intentamos cargar 'reporte_final.png' o el generado 'reporte_aprendizaje.png'
+        # Buscamos primero el nombre que pediste, luego el fallback
+        self.img_reporte = AssetManager.cargar_imagen("reporte_final.png")
+        
+        if not self.img_reporte:
+             # Si no existe, buscamos el que genera entrenar.py por defecto
+             self.img_reporte = AssetManager.cargar_imagen("reporte_aprendizaje.png")
+        
+        if self.img_reporte:
+            # Escalar imagen si es muy grande para que quepa
+            # Mantenemos aspect ratio o forzamos ajuste suave
+            self.img_reporte = pygame.transform.scale(self.img_reporte, (800, 450))
+            
+        self.modo_actual = "RESUMEN"
 
     def accion_volver(self):
         self.modo_actual = "MENU"
 
     def dibujar_panel_resumen(self):
-        # Panel Oscuro (Estilo Game UI)
+        # Título
+        titulo = pygame.font.SysFont("Arial", 24, bold=True).render("REPORTE DE APRENDIZAJE", True, (255, 255, 100))
+        self.pantalla.blit(titulo, (ANCHO//2 - titulo.get_width()//2, 30))
+
+        if self.img_reporte:
+            # Centrar imagen
+            x_img = (ANCHO - 800) // 2
+            y_img = (ALTO - 450) // 2 + 20
+            
+            # Marco
+            pygame.draw.rect(self.pantalla, (255, 255, 255), (x_img-5, y_img-5, 810, 460), 2)
+            self.pantalla.blit(self.img_reporte, (x_img, y_img))
+        else:
+            # Mensaje de error si no hay imagen
+            msg = self.fuente_info.render("No se encontró 'reporte_final.png' ni 'reporte_aprendizaje.png'", True, (255, 100, 100))
+            self.pantalla.blit(msg, (ANCHO//2 - msg.get_width()//2, ALTO//2))
+            msg2 = self.fuente_info.render("Ejecuta 'entrenar.py' para generar la gráfica.", True, (200, 200, 200))
+            self.pantalla.blit(msg2, (ANCHO//2 - msg2.get_width()//2, ALTO//2 + 30))
+
+    def dibujar_panel_accuracy(self):
         panel = pygame.Surface((600, 300))
         panel.set_alpha(230)
         panel.fill(COLOR_PANEL)
         x_panel = (ANCHO - 600) // 2
         y_panel = (ALTO - 300) // 2
         self.pantalla.blit(panel, (x_panel, y_panel))
-        
-        # Borde del panel
         pygame.draw.rect(self.pantalla, (255, 255, 255), (x_panel, y_panel, 600, 300), 2)
 
-        # Texto del Resumen
         y_text = y_panel + 40
         for linea in self.info_accuracy:
             surf = self.fuente_info.render(linea, True, COLOR_TEXTO)
@@ -158,24 +206,24 @@ class DashboardApp:
             for e in eventos:
                 if e.type == pygame.QUIT: pygame.quit(); sys.exit()
 
-            # Lógica
             if self.modo_actual == "MENU":
                 for btn in self.botones: btn.actualizar(eventos)
             else:
                 self.btn_volver.actualizar(eventos)
 
-            # Dibujado
             if self.fondo: self.pantalla.blit(self.fondo, (0, 0))
             else: self.pantalla.fill((40, 40, 40))
 
             if self.modo_actual == "MENU":
-                # Título
-                titulo = pygame.font.SysFont("Arial", 40, bold=True).render("PANEL DE CONTROL IA", True, (255, 255, 255))
-                self.pantalla.blit(titulo, (ANCHO//2 - titulo.get_width()//2, 100))
-                
+                t = pygame.font.SysFont("Arial", 40, bold=True).render("PANEL DE CONTROL IA", True, (255, 255, 255))
+                self.pantalla.blit(t, (ANCHO//2 - t.get_width()//2, 100))
                 for btn in self.botones: btn.dibujar(self.pantalla)
             
             elif self.modo_actual == "ACCURACY":
+                self.dibujar_panel_accuracy()
+                self.btn_volver.dibujar(self.pantalla)
+            
+            elif self.modo_actual == "RESUMEN":
                 self.dibujar_panel_resumen()
                 self.btn_volver.dibujar(self.pantalla)
 

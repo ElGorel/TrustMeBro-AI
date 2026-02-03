@@ -26,8 +26,12 @@ COLOR_TEXTO_AMARILLO = (255, 255, 100)
 COLOR_TEXTO_ROJO = (255, 50, 50)
 COLOR_TEXTO_VERDE = (50, 255, 50)
 COLOR_HP_BARRA = (200, 0, 0)
-COLOR_BOTON = (50, 60, 70)
-COLOR_BOTON_HOVER = (80, 90, 100)
+
+# PALETA BOTONES
+COLOR_BOTON_FONDO = (60, 60, 70)   
+COLOR_BOTON_BORDE_LUZ = (100, 100, 110)
+COLOR_BOTON_BORDE_SOMBRA = (30, 30, 40)
+COLOR_BOTON_HOVER = (80, 80, 90)
 
 # --- HELPER PARA GIFS ANIMADOS ---
 class AnimatedGif:
@@ -62,6 +66,7 @@ class AnimatedGif:
 
 class AssetManager:
     _fuentes_cache = {}
+    _sfx_cache = {}
 
     @staticmethod
     def cargar_imagen(nombre, size=None):
@@ -71,9 +76,7 @@ class AssetManager:
             if size: return pygame.transform.scale(img, size)
             return img
         else:
-            print(f"[ERROR] Asset faltante: {nombre}")
-            surf = pygame.Surface(size if size else (50,50))
-            surf.fill((255,0,255))
+            surf = pygame.Surface(size if size else (50,50)); surf.fill((255,0,255))
             return surf
 
     @staticmethod
@@ -82,17 +85,53 @@ class AssetManager:
         return AnimatedGif(ruta, size)
 
     @staticmethod
-    def cargar_fuente(nombre, tamaño):
-        clave = (nombre, tamaño)
-        if clave in AssetManager._fuentes_cache:
-            return AssetManager._fuentes_cache[clave]
-            
+    def cargar_y_reproducir_musica(nombre, loops=-1, volumen=0.5):
         ruta = os.path.join(RAIZ_PROYECTO, "assets", nombre)
         if os.path.exists(ruta):
-            fuente = pygame.font.Font(ruta, tamaño)
-        else:
-            fuente = pygame.font.SysFont("Arial", tamaño, bold=True)
-        
+            try:
+                pygame.mixer.music.load(ruta)
+                pygame.mixer.music.set_volume(volumen)
+                pygame.mixer.music.play(loops=loops, fade_ms=1000)
+                return True
+            except Exception as e:
+                print(f"[ERROR] Música {nombre}: {e}")
+        return False
+
+    @staticmethod
+    def detener_musica_fadeout(tiempo_ms=1000):
+        pygame.mixer.music.fadeout(tiempo_ms)
+
+    @staticmethod
+    def cargar_sonido(nombre, volumen=1.0):
+        if nombre in AssetManager._sfx_cache:
+            return AssetManager._sfx_cache[nombre]
+
+        ruta = os.path.join(RAIZ_PROYECTO, "assets", nombre)
+        if os.path.exists(ruta):
+            try:
+                sfx = pygame.mixer.Sound(ruta)
+                sfx.set_volume(volumen)
+                AssetManager._sfx_cache[nombre] = sfx
+                return sfx
+            except Exception as e:
+                print(f"[ERROR] SFX {nombre}: {e}")
+        return None
+
+    @staticmethod
+    def reproducir_sfx_expresion(nombre_imagen_face):
+        if not nombre_imagen_face: return
+        nombre_base = os.path.splitext(nombre_imagen_face)[0]
+        nombre_audio = f"{nombre_base}.mp3"
+        sfx = AssetManager.cargar_sonido(nombre_audio, volumen=0.8)
+        if sfx: sfx.play()
+
+    @staticmethod
+    def cargar_fuente(nombre, tamaño):
+        clave = (nombre, tamaño)
+        if clave in AssetManager._fuentes_cache: return AssetManager._fuentes_cache[clave]
+        ruta = os.path.join(RAIZ_PROYECTO, "assets", nombre)
+        if os.path.exists(ruta): fuente = pygame.font.Font(ruta, tamaño)
+        else: fuente = pygame.font.SysFont("Arial", tamaño, bold=True)
         AssetManager._fuentes_cache[clave] = fuente
         return fuente
 
@@ -100,58 +139,55 @@ class AssetManager:
     def ruta_cerebro():
         return os.path.join(RAIZ_PROYECTO, "simulation", "cerebro_entrenado.pkl")
 
-# --- HELPER DE TEXTO MEJORADO ---
+# --- HELPER DE TEXTO ---
 def draw_text_wrapped(surface, text, font, color, rect, aa=True, bkg=None):
     y = rect.top
-    lineSpacing = 6 # Aumentado para mejor lectura (antes era -2)
+    lineSpacing = 6
     fontHeight = font.size("Tg")[1] + lineSpacing
-
     while text:
         i = 1
         if y + fontHeight > rect.bottom: break
-
-        while font.size(text[:i])[0] < rect.width and i < len(text):
-            i += 1
-
-        if i < len(text): 
-            i = text.rfind(" ", 0, i) + 1
-        
+        while font.size(text[:i])[0] < rect.width and i < len(text): i += 1
+        if i < len(text): i = text.rfind(" ", 0, i) + 1
         if bkg:
-            image = font.render(text[:i], 1, color, bkg)
-            image.set_colorkey(bkg)
+            image = font.render(text[:i], 1, color, bkg); image.set_colorkey(bkg)
         else:
             image = font.render(text[:i], aa, color)
-
         surface.blit(image, (rect.left, y))
         y += fontHeight
-
         text = text[i:]
     return text
 
 class Boton:
-    def __init__(self, x, y, w, h, texto, accion_callback, color_base=COLOR_BOTON, fuente_nombre="fuente_juego.ttf"):
+    def __init__(self, x, y, w, h, texto, accion_callback, fuente_nombre="fuente_juego.ttf", tamano_fuente=20):
         self.rect = pygame.Rect(x, y, w, h)
         self.texto = texto
         self.accion = accion_callback
-        self.fuente = AssetManager.cargar_fuente(fuente_nombre, 18)
-        self.color_base = color_base
-        self.color_actual = color_base
+        self.fuente = AssetManager.cargar_fuente(fuente_nombre, tamano_fuente)
+        self.color_actual = COLOR_BOTON_FONDO
+        self.hovered = False
 
     def actualizar(self, eventos):
         mouse_pos = pygame.mouse.get_pos()
         if self.rect.collidepoint(mouse_pos):
             self.color_actual = COLOR_BOTON_HOVER
+            self.hovered = True
             for e in eventos:
-                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-                    self.accion()
+                if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1: self.accion()
         else:
-            self.color_actual = self.color_base
+            self.color_actual = COLOR_BOTON_FONDO
+            self.hovered = False
 
     def dibujar(self, superficie):
-        pygame.draw.rect(superficie, self.color_actual, self.rect, border_radius=8)
-        pygame.draw.rect(superficie, (200,200,200), self.rect, 2, border_radius=8)
+        pygame.draw.rect(superficie, self.color_actual, self.rect)
+        grosor = 3
+        pygame.draw.rect(superficie, COLOR_BOTON_BORDE_LUZ, (self.rect.left, self.rect.top, self.rect.width, grosor))
+        pygame.draw.rect(superficie, COLOR_BOTON_BORDE_LUZ, (self.rect.left, self.rect.top, grosor, self.rect.height))
+        pygame.draw.rect(superficie, COLOR_BOTON_BORDE_SOMBRA, (self.rect.left, self.rect.bottom - grosor, self.rect.width, grosor))
+        pygame.draw.rect(superficie, COLOR_BOTON_BORDE_SOMBRA, (self.rect.right - grosor, self.rect.top, grosor, self.rect.height))
         surf_txt = self.fuente.render(self.texto, True, COLOR_TEXTO_BLANCO)
         rect_txt = surf_txt.get_rect(center=self.rect.center)
+        if self.hovered: rect_txt.y += 1
         superficie.blit(surf_txt, rect_txt)
 
 class EscenaLore:
@@ -160,18 +196,34 @@ class EscenaLore:
         self.fondo_gif = AssetManager.cargar_gif("gust_lore.gif", (ANCHO, ALTO))
         self.npc_face = AssetManager.cargar_imagen("npc_neutral.png", (150, 150))
         
+        # Audio Lore (Viento)
+        if AssetManager.cargar_y_reproducir_musica("viento.mp3", loops=-1, volumen=0.6):
+            print("Ambiente de viento iniciado.")
+            
+        self.sfx_confia = AssetManager.cargar_sonido("confia_en_mi.mp3", volumen=1.0)
+        self.ya_sono_confia = False 
+        
         self.fuente_lore = AssetManager.cargar_fuente("fuente_juego.ttf", 22)
         self.fuente_final = AssetManager.cargar_fuente("fuente_juego.ttf", 28)
         self.fuente_aviso = AssetManager.cargar_fuente("fuente_juego.ttf", 16)
 
-        self.texto_lore_completo = "Un soldado que se ha destacado de muchos, es mejor del capital Griffith del grupo mas temido \"Banda del Halcon\" ahora encerrado por ordenes del rey! Gust ha tenido una vida muy solitaria, era el y su gran espalda por el cual todos temían, hoy solo ve su gran desastre y quiere regresar a su carpa a descansar. Pero sin saber que se topara con su capitan... ? (Hay algo raro en el, o solo estoy cansado y desorientado). Si tanto lo conoce debe ponerse a prueba para llegar a su tesoro mas preciado (Casca)."
-        self.texto_final_npc = "Confía en mi!"
+        # TEXTO CORREGIDO (Sin tildes para evitar cuadros blancos)
+        self.texto_lore_completo = (
+            "Eres Gust, el inigualable guerrero de la Banda del Halcon. Tras la traicion del Rey, "
+            "vuestro sueno de gloria se ha convertido en una pesadilla. Exhausto y separado de tu escuadron, "
+            "buscas desesperadamente regresar para salvar a Casca. Pero la niebla del bosque parece jugar con tu mente... "
+            "De repente, Griffith aparece frente a ti. Es realmente el? Su mirada es gelida y distante, "
+            "ocultando intenciones que no logras descifrar. El afirma conocer el unico camino seguro para escapar "
+            "de esta emboscada, pero tu instinto te grita peligro. En este juego de sombras, una mentira "
+            "podria costarte la vida... o algo peor."
+        )
+        self.texto_final_npc = "Confia en mi!"
         
         self.estado = 0
         self.texto_actual = ""
         self.caracteres_mostrados = 0
         self.ultimo_tick = pygame.time.get_ticks()
-        self.velocidad = 35 
+        self.velocidad = 30 
 
     def actualizar(self, eventos):
         self.fondo_gif.update()
@@ -181,7 +233,6 @@ class EscenaLore:
             if e.type == pygame.MOUSEBUTTONDOWN: avanzar = True
 
         ahora = pygame.time.get_ticks()
-
         if self.estado == 0: 
             if ahora - self.ultimo_tick > self.velocidad and self.caracteres_mostrados < len(self.texto_lore_completo):
                 self.caracteres_mostrados += 1
@@ -200,7 +251,10 @@ class EscenaLore:
                 self.texto_actual = ""
                 self.caracteres_mostrados = 0
 
-        elif self.estado == 2: 
+        elif self.estado == 2:
+            if not self.ya_sono_confia and self.sfx_confia:
+                self.sfx_confia.play()
+                self.ya_sono_confia = True
             if ahora - self.ultimo_tick > self.velocidad + 20 and self.caracteres_mostrados < len(self.texto_final_npc):
                 self.caracteres_mostrados += 1
                 self.texto_actual = self.texto_final_npc[:self.caracteres_mostrados]
@@ -210,70 +264,64 @@ class EscenaLore:
 
         elif self.estado == 3: 
              if avanzar:
+                 AssetManager.detener_musica_fadeout(500)
                  self.manager.cambiar_escena("JUEGO")
 
     def dibujar(self, pantalla):
         self.fondo_gif.draw(pantalla)
+        w_panel, h_panel = ANCHO - 100, ALTO - 200
+        x_panel = (ANCHO - w_panel) // 2
+        y_panel = (ALTO - h_panel) // 2
+        
+        s = pygame.Surface((w_panel, h_panel))
+        s.set_alpha(230); s.fill((10, 10, 20)) 
+        pantalla.blit(s, (x_panel, y_panel))
+        
+        pygame.draw.rect(pantalla, (100, 100, 100), (x_panel, y_panel, w_panel, h_panel), 3)
+        pygame.draw.rect(pantalla, (200, 200, 200), (x_panel+6, y_panel+6, w_panel-12, h_panel-12), 1)
 
-        panel = pygame.Surface((ANCHO - 100, ALTO - 200))
-        panel.set_alpha(200); panel.fill((0, 0, 0))
-        rect_panel = panel.get_rect(center=(ANCHO//2, ALTO//2))
-        pantalla.blit(panel, rect_panel)
-
-        rect_texto = rect_panel.inflate(-40, -40)
+        rect_panel_obj = pygame.Rect(x_panel, y_panel, w_panel, h_panel)
+        rect_texto = rect_panel_obj.inflate(-60, -60)
 
         if self.estado <= 1:
             draw_text_wrapped(pantalla, self.texto_actual, self.fuente_lore, COLOR_TEXTO_BLANCO, rect_texto)
         else:
-            pantalla.blit(self.npc_face, (rect_panel.centerx - 75, rect_panel.top + 30))
-            
+            pantalla.blit(self.npc_face, (rect_panel_obj.centerx - 75, rect_panel_obj.top + 40))
             txt_surf = self.fuente_final.render(self.texto_actual, True, COLOR_TEXTO_AMARILLO)
-            rect_txt = txt_surf.get_rect(center=(rect_panel.centerx, rect_panel.centery + 80))
+            rect_txt = txt_surf.get_rect(center=(rect_panel_obj.centerx, rect_panel_obj.centery + 90))
             pantalla.blit(txt_surf, rect_txt)
 
         if self.estado == 1 or self.estado == 3:
-            aviso = self.fuente_aviso.render("[Presiona ESPACIO para continuar]", True, (200, 200, 200))
-            pantalla.blit(aviso, (ANCHO//2 - aviso.get_width()//2, rect_panel.bottom - 30))
-
+            aviso = self.fuente_aviso.render("[Presiona ESPACIO]", True, (150, 150, 150))
+            pantalla.blit(aviso, (ANCHO//2 - aviso.get_width()//2, rect_panel_obj.bottom - 40))
 
 class EscenaGameOver:
-    def __init__(self, manager, mensaje="¡HAS MUERTO!"):
+    def __init__(self, manager, mensaje="HAS MUERTO!"):
         self.manager = manager
         self.mensaje = mensaje
         self.fuente_muerte = AssetManager.cargar_fuente("fuente_terror.ttf", 80)
         self.fuente_sub = AssetManager.cargar_fuente("fuente_juego.ttf", 30)
-        
         self.img_traicion = AssetManager.cargar_imagen("npc_traicion.png", (200, 200))
         
-        self.btn_menu = Boton(ANCHO//2 - 100, ALTO - 100, 200, 50, "Volver al Menú",
-                              lambda: self.manager.cambiar_escena("MENU"), color_base=(100, 20, 20))
+        self.sfx_muerte = AssetManager.cargar_sonido("npc_traicion.mp3", volumen=1.0)
+        if self.sfx_muerte: self.sfx_muerte.play()
+            
+        self.btn_menu = Boton(ANCHO//2 - 100, ALTO - 100, 200, 50, "Volver al Menu", lambda: self.manager.cambiar_escena("MENU"))
 
     def actualizar(self, eventos):
         self.btn_menu.actualizar(eventos)
 
     def dibujar(self, pantalla):
         pantalla.fill((0, 0, 0))
-        
-        # --- POSICIONAMIENTO DINÁMICO (CORRECCIÓN BUG DE ESPACIO) ---
-        y_cursor = 40 # Posición vertical inicial
-        
-        # 1. Imagen (Griffith burlándose)
+        y_cursor = 40
         if self.img_traicion:
             pantalla.blit(self.img_traicion, (ANCHO//2 - 100, y_cursor))
-            # Movemos el cursor abajo: Altura imagen + 20px espacio
-            y_cursor += 200 + 20 
-
-        # 2. Texto Principal (HAS MUERTO)
+            y_cursor += 220
         txt_muerte = self.fuente_muerte.render(self.mensaje, True, COLOR_TEXTO_ROJO)
         pantalla.blit(txt_muerte, (ANCHO//2 - txt_muerte.get_width()//2, y_cursor))
-        # Movemos el cursor: Altura del texto + 30px espacio (aprox 1cm)
         y_cursor += txt_muerte.get_height() + 30 
-
-        # 3. Subtexto
-        txt_sub = self.fuente_sub.render("Tu confianza fue tu perdición...", True, (150, 150, 150))
+        txt_sub = self.fuente_sub.render("Tu confianza fue tu perdicion...", True, (150, 150, 150))
         pantalla.blit(txt_sub, (ANCHO//2 - txt_sub.get_width()//2, y_cursor))
-        
-        # 4. Botón (Fijo abajo)
         self.btn_menu.dibujar(pantalla)
 
 class EscenaJuego:
@@ -283,6 +331,11 @@ class EscenaJuego:
         self.npc = NpcAgent(archivo_q=AssetManager.ruta_cerebro())
         self.fondo = AssetManager.cargar_imagen("Gemini_Generated_Image_c990xec990xec990.png", (ANCHO, ALTO))
         
+        # --- NUEVO: MÚSICA DE FONDO DEL JUEGO ---
+        # Asegúrate de tener 'game_theme.mp3' en assets
+        if AssetManager.cargar_y_reproducir_musica("game_theme.mp3", loops=-1, volumen=0.5):
+            print("Musica del juego iniciada.")
+
         fuente_main = "fuente_juego.ttf"
         self.fuente_stats = AssetManager.cargar_fuente(fuente_main, 20)
         self.fuente_dialogo = AssetManager.cargar_fuente(fuente_main, 24)
@@ -292,10 +345,8 @@ class EscenaJuego:
         self.confia_en_npc = True
         self.puntos_vida = 100
         self.juego_terminado = False
-        
         self.imgs_escenarios = [None, None, None]
         self.img_rostro_actual = None
-        
         self.npc_texto_completo = ""
         self.npc_texto_actual = ""
         self.caracteres_mostrados = 0
@@ -304,13 +355,12 @@ class EscenaJuego:
 
         self.preparar_ronda()
         
-        y_btn = ALTO - 80
-        w_btn = 160; sep = 30
+        y_btn = ALTO - 80; w_btn = 160; sep = 30
         x_start = (ANCHO - (w_btn*3 + sep*2)) // 2
         self.btn_izq = Boton(x_start, y_btn, w_btn, 50, "IZQUIERDA", lambda: self.resolver_ronda(Ubicacion.IZQUIERDA))
         self.btn_cen = Boton(x_start + w_btn + sep, y_btn, w_btn, 50, "CENTRO", lambda: self.resolver_ronda(Ubicacion.CENTRO))
         self.btn_der = Boton(x_start + (w_btn + sep)*2, y_btn, w_btn, 50, "DERECHA", lambda: self.resolver_ronda(Ubicacion.DERECHA))
-        self.btn_menu = Boton(ANCHO//2 - 100, ALTO//2 + 50, 200, 50, "Volver al Menú", lambda: self.manager.cambiar_escena("MENU"), color_base=(100, 50, 50))
+        self.btn_menu = Boton(ANCHO//2 - 100, ALTO//2 + 50, 200, 50, "Volver al Menu", lambda: self.manager.cambiar_escena("MENU"))
 
     def preparar_ronda(self):
         self.motor.reset_ronda()
@@ -330,18 +380,18 @@ class EscenaJuego:
         
         es_mentira = (accion_sugerida != path_int)
         nombre_face = NPCBehaviorEngine.decidir_rostro(es_mentira, self.confia_en_npc, False)
+        
         self.img_rostro_actual = AssetManager.cargar_imagen(nombre_face, (140, 140))
+        AssetManager.reproducir_sfx_expresion(nombre_face)
         
         self.npc_texto_completo = f"Te recomiendo ir por {nombre_lugar}."
         self.npc_texto_actual = ""
         self.caracteres_mostrados = 0
         self.ultimo_tick_escritura = pygame.time.get_ticks()
-        
         self.sugerencia_int = accion_sugerida
 
     def resolver_ronda(self, decision_humana: Ubicacion):
         if self.juego_terminado: return
-        
         if self.caracteres_mostrados < len(self.npc_texto_completo):
             self.npc_texto_actual = self.npc_texto_completo
             self.caracteres_mostrados = len(self.npc_texto_completo)
@@ -353,11 +403,9 @@ class EscenaJuego:
         dano = 0
         if not gano_ronda:
             if self.nivel == 2:
-                dano = 1000
-                mensaje_dano = "¡TRAMPA FINAL! (-INF HP)"
+                dano = 1000; mensaje_dano = "TRAMPA FINAL! (-INF HP)"
             else:
-                dano = 40
-                mensaje_dano = "¡TRAMPA! (-40 HP)"
+                dano = 40; mensaje_dano = "TRAMPA! (-40 HP)"
             self.puntos_vida -= dano
         else:
             mensaje_dano = "CAMINO SEGURO"
@@ -375,14 +423,14 @@ class EscenaJuego:
         elif hizo_caso and gano_ronda: self.confia_en_npc = True
         
         self.ultimo_resultado_texto = f"{mensaje_dano} | HP Restante: {self.puntos_vida}"
-        
         self.nivel += 1
         if self.nivel > 2:
             self.juego_terminado = True
             nombre_face = NPCBehaviorEngine.decidir_rostro(True, False, True) 
             self.img_rostro_actual = AssetManager.cargar_imagen(nombre_face, (140, 140))
+            AssetManager.reproducir_sfx_expresion(nombre_face)
 
-            self.npc_texto_completo = "Increíble... has sobrevivido a todo. Griffith te espera."
+            self.npc_texto_completo = "Increible... has sobrevivido a todo. Griffith te espera."
             self.npc_texto_actual = ""
             self.caracteres_mostrados = 0
         else:
@@ -395,7 +443,6 @@ class EscenaJuego:
                 self.caracteres_mostrados += 1
                 self.npc_texto_actual = self.npc_texto_completo[:self.caracteres_mostrados]
                 self.ultimo_tick_escritura = ahora
-
         if not self.juego_terminado:
             self.btn_izq.actualizar(eventos)
             self.btn_cen.actualizar(eventos)
@@ -411,7 +458,6 @@ class EscenaJuego:
 
     def dibujar(self, pantalla):
         if self.fondo: pantalla.blit(self.fondo, (0, 0))
-        
         if self.imgs_escenarios[0]: pantalla.blit(self.imgs_escenarios[0], (50, 160))
         if self.imgs_escenarios[1]: pantalla.blit(self.imgs_escenarios[1], (400, 130))
         if self.imgs_escenarios[2]: pantalla.blit(self.imgs_escenarios[2], (750, 160))
@@ -422,20 +468,17 @@ class EscenaJuego:
         pygame.draw.rect(pantalla, (50, 0, 0), (ANCHO - 250, 30, largo_barra, 20))
         pygame.draw.rect(pantalla, COLOR_HP_BARRA, (ANCHO - 250, 30, largo_actual, 20))
         self.dibujar_texto_sombra(pantalla, f"HP: {self.puntos_vida}/100", self.fuente_stats, ANCHO - 250, 5, COLOR_TEXTO_BLANCO)
-
         self.dibujar_texto_sombra(pantalla, f"NIVEL: {self.nivel}/2", self.fuente_stats, 50, 30, COLOR_TEXTO_BLANCO)
 
         panel_h = 160; panel_y = ALTO - 260
         s = pygame.Surface((ANCHO, panel_h)); s.set_alpha(200); s.fill((10, 10, 15))
         pantalla.blit(s, (0, panel_y))
-        
         if self.img_rostro_actual:
             pygame.draw.rect(pantalla, (50, 50, 50), (40, panel_y - 40, 144, 144))
             pantalla.blit(self.img_rostro_actual, (42, panel_y - 38))
 
-        self.dibujar_texto_sombra(pantalla, "Griffith:", self.fuente_stats, 200, panel_y + 20, COLOR_TEXTO_AMARILLO)
+        self.dibujar_texto_sombra(pantalla, "EL GUIA:", self.fuente_stats, 200, panel_y + 20, COLOR_TEXTO_AMARILLO)
         pantalla.blit(self.fuente_dialogo.render(self.npc_texto_actual, True, COLOR_TEXTO_BLANCO), (200, panel_y + 50))
-        
         if self.ultimo_resultado_texto:
             color_res = COLOR_TEXTO_VERDE if "SEGURO" in self.ultimo_resultado_texto else COLOR_TEXTO_ROJO
             self.dibujar_texto_sombra(pantalla, self.ultimo_resultado_texto, self.fuente_resultado, 200, panel_y + 100, color_res)
@@ -448,32 +491,39 @@ class EscenaJuego:
             panel_fin = pygame.Surface((ANCHO, ALTO))
             panel_fin.set_alpha(180); panel_fin.fill((0,0,0))
             pantalla.blit(panel_fin, (0,0))
-            self.dibujar_texto_sombra(pantalla, "¡JUEGO COMPLETADO!", self.fuente_stats, ANCHO//2 - 100, ALTO//2 - 50, COLOR_TEXTO_VERDE)
+            self.dibujar_texto_sombra(pantalla, "JUEGO COMPLETADO!", self.fuente_stats, ANCHO//2 - 100, ALTO//2 - 50, COLOR_TEXTO_VERDE)
             self.btn_menu.dibujar(pantalla)
 
 class EscenaMenu:
     def __init__(self, manager):
         self.manager = manager
         self.fondo = AssetManager.cargar_imagen("Pantalla_principal.png", (ANCHO, ALTO))
-        self.btn_jugar = Boton(ANCHO//2 - 125, ALTO//2 + 120, 250, 70, "INICIAR AVENTURA", lambda: self.manager.cambiar_escena("LORE"), fuente_nombre="fuente_terror.ttf")
-        self.fuente_titulo = AssetManager.cargar_fuente("fuente_terror.ttf", 70)
+        self.btn_jugar = Boton(ANCHO//2 - 130, ALTO//2 + 150, 260, 70, "INICIAR AVENTURA", 
+                               self.iniciar_con_musica, 
+                               fuente_nombre="fuente_juego.ttf", tamano_fuente=24)
+        if AssetManager.cargar_y_reproducir_musica("menu_theme.mp3", volumen=0.4):
+            print("Musica del menu reproducida.")
+
+    def iniciar_con_musica(self):
+        AssetManager.detener_musica_fadeout(1000)
+        self.manager.cambiar_escena("LORE")
 
     def actualizar(self, eventos):
         self.btn_jugar.actualizar(eventos)
 
     def dibujar(self, pantalla):
         if self.fondo: pantalla.blit(self.fondo, (0, 0))
-        
-        titulo = "TRUST ME, BRO"
-        sombra = self.fuente_titulo.render(titulo, True, (0,0,0))
-        txt = self.fuente_titulo.render(titulo, True, (255, 215, 0))
-        pantalla.blit(sombra, (ANCHO//2 - txt.get_width()//2 + 5, 105))
-        pantalla.blit(txt, (ANCHO//2 - txt.get_width()//2, 100))
         self.btn_jugar.dibujar(pantalla)
 
 class SceneManager:
     def __init__(self):
         pygame.init()
+        try:
+            pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+            print("[SISTEMA] Motor de audio inicializado.")
+        except Exception as e:
+            print(f"[ERROR CRITICO] No se pudo iniciar audio: {e}")
+
         self.escenas = {
             "MENU": EscenaMenu(self),
             "LORE": None, 
@@ -483,7 +533,10 @@ class SceneManager:
         self.escena_actual = self.escenas["MENU"]
 
     def cambiar_escena(self, nombre):
-        if nombre == "LORE":
+        if nombre == "MENU":
+            self.escenas["MENU"] = EscenaMenu(self)
+            self.escena_actual = self.escenas["MENU"]
+        elif nombre == "LORE":
              self.escenas["LORE"] = EscenaLore(self)
              self.escena_actual = self.escenas["LORE"]
         elif nombre == "JUEGO":
